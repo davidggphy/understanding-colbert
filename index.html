@@ -144,6 +144,9 @@
     background:#fff;
   }
   .arrow{color:var(--accent);font-size:1.4rem}
+  .refs{margin:0;padding-left:20px}
+  .refs li{margin:12px 0}
+  .refs a{color:var(--accent);font-weight:600}
   footer{text-align:center;color:var(--muted);padding:20px}
 </style>
 </head>
@@ -369,6 +372,30 @@
     <div class="note">
       Think of BM25 as matching words, a dense retriever as matching the overall meaning, and ColBERT as matching the meaning of each important query token against the best part of the document.
     </div>
+  </section>
+
+  <section>
+    <h2>9. References</h2>
+    <ul class="refs">
+      <li>
+        Khattab, O., &amp; Zaharia, M. (2020).
+        <a href="https://arxiv.org/abs/2004.12832">ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT</a>.
+        SIGIR 2020.
+      </li>
+      <li>
+        Santhanam, K., Khattab, O., Saad-Falcon, J., Potts, C., &amp; Zaharia, M. (2022).
+        <a href="https://arxiv.org/abs/2112.01488">ColBERTv2: Effective and Efficient Retrieval via Lightweight Late Interaction</a>.
+        NAACL 2022.
+      </li>
+      <li>
+        Warner, B., et al. (2024).
+        <a href="https://arxiv.org/abs/2412.13663">Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder for Fast, Memory Efficient, and Long Context Finetuning and Inference</a>.
+      </li>
+      <li>
+        Chaffin, A., et al. (2025).
+        <a href="https://arxiv.org/abs/2508.03555">PyLate: Flexible Training and Retrieval for Late Interaction Models</a>.
+      </li>
+    </ul>
   </section>
 </main>
 
