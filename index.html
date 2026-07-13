@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Understanding ColBERT</title>
+<style>
+  :root{
+    --bg:#f6f8fb;
+    --card:#ffffff;
+    --text:#172033;
+    --muted:#667085;
+    --border:#dfe5ee;
+    --accent:#3457d5;
+    --accent-soft:#eef2ff;
+    --good:#16825d;
+    --warn:#b56a00;
+    --shadow:0 8px 24px rgba(18, 38, 63, .08);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.55;
+  }
+  header{
+    background:linear-gradient(135deg,#182848,#3457d5);
+    color:#fff;
+    padding:56px 24px;
+  }
+  header .wrap, main{max-width:1100px;margin:auto}
+  h1{font-size:clamp(2.2rem,5vw,4.3rem);line-height:1.02;margin:0 0 16px}
+  h2{font-size:2rem;margin:0 0 14px}
+  h3{margin-top:0}
+  .lead{font-size:1.15rem;max-width:780px;color:#e7ecff}
+  main{padding:32px 20px 64px}
+  section{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:18px;
+    box-shadow:var(--shadow);
+    padding:28px;
+    margin:22px 0;
+  }
+  .grid{display:grid;gap:18px}
+  .grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  @media(max-width:800px){.grid-3,.grid-2{grid-template-columns:1fr}}
+  .mini{
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:18px;
+    background:#fff;
+  }
+  .badge{
+    display:inline-block;
+    background:var(--accent-soft);
+    color:var(--accent);
+    font-weight:700;
+    padding:5px 10px;
+    border-radius:999px;
+    font-size:.82rem;
+    margin-bottom:10px;
+  }
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .formula{
+    background:#111827;
+    color:#f9fafb;
+    padding:18px;
+    border-radius:12px;
+    overflow:auto;
+    font-size:1.05rem;
+  }
+  .tokens{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin:12px 0;
+  }
+  .token{
+    border:1px solid var(--border);
+    background:#fafbfc;
+    padding:7px 10px;
+    border-radius:9px;
+    font-weight:600;
+  }
+  .token.query{background:#eef2ff;border-color:#b8c3ff;color:#263d99}
+  .token.doc{background:#ecfdf3;border-color:#abefc6;color:#067647}
+  .note{
+    border-left:4px solid var(--accent);
+    background:var(--accent-soft);
+    padding:14px 16px;
+    border-radius:8px;
+    color:#263d70;
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:16px;
+    font-size:.95rem;
+  }
+  th,td{border:1px solid var(--border);padding:10px;text-align:center}
+  th{background:#f2f4f7}
+  td.best{background:#dcfae6;font-weight:800;color:#067647}
+  td.sum{background:#eef2ff;font-weight:800}
+  .controls{
+    display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0 18px
+  }
+  select,button{
+    font:inherit;
+    border-radius:10px;
+    border:1px solid var(--border);
+    padding:10px 12px;
+    background:#fff;
+  }
+  button{
+    background:var(--accent);
+    color:#fff;
+    border-color:var(--accent);
+    cursor:pointer;
+    font-weight:700;
+  }
+  .result{
+    background:#f8fafc;
+    border:1px dashed #cfd8e6;
+    border-radius:12px;
+    padding:16px;
+    min-height:110px;
+  }
+  .bar-row{display:grid;grid-template-columns:180px 1fr 60px;gap:10px;align-items:center;margin:9px 0}
+  .bar{height:16px;background:#e5e7eb;border-radius:999px;overflow:hidden}
+  .bar > span{display:block;height:100%;background:#3457d5;border-radius:999px}
+  .subtle{color:var(--muted)}
+  .flow{
+    display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+    font-weight:700;
+  }
+  .flow .box{
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:12px 14px;
+    background:#fff;
+  }
+  .arrow{color:var(--accent);font-size:1.4rem}
+  footer{text-align:center;color:var(--muted);padding:20px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="badge" style="background:rgba(255,255,255,.15);color:#fff">Interactive explainer</div>
+    <h1>Understanding ColBERT</h1>
+    <p class="lead">
+      ColBERT is a neural retrieval model that keeps one embedding per token and combines them with
+      late interaction. This page shows why that matters, with concrete examples.
+    </p>
+  </div>
+</header>
+
+<main>
+  <section>
+    <h2>1. The basic idea</h2>
+    <div class="grid grid-3">
+      <div class="mini">
+        <span class="badge">BM25</span>
+        <h3>Lexical matching</h3>
+        <p>Scores overlap between query terms and document terms.</p>
+        <p class="subtle">Excellent for names, IDs, rare terms and exact wording.</p>
+      </div>
+      <div class="mini">
+        <span class="badge">Dense retriever</span>
+        <h3>One vector per passage</h3>
+        <p>Compresses the whole query and passage into one vector each.</p>
+        <p class="subtle">Good semantic matching, but fine details can get blurred.</p>
+      </div>
+      <div class="mini">
+        <span class="badge">ColBERT</span>
+        <h3>One vector per token</h3>
+        <p>Keeps token-level representations and matches them at query time.</p>
+        <p class="subtle">More precise than a single-vector retriever, cheaper than a cross-encoder.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>2. Example: paraphrases</h2>
+    <p><strong>Query:</strong></p>
+    <div class="tokens">
+      <span class="token query">cancel</span>
+      <span class="token query">employment</span>
+      <span class="token query">agreement</span>
+    </div>
+
+    <p><strong>Relevant document:</strong></p>
+    <div class="tokens">
+      <span class="token doc">procedure</span>
+      <span class="token doc">for</span>
+      <span class="token doc">terminating</span>
+      <span class="token doc">a</span>
+      <span class="token doc">work</span>
+      <span class="token doc">contract</span>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="mini">
+        <h3>BM25 view</h3>
+        <p>There is almost no exact term overlap:</p>
+        <ul>
+          <li><code>cancel ≠ terminating</code></li>
+          <li><code>employment ≠ work</code></li>
+          <li><code>agreement ≠ contract</code></li>
+        </ul>
+        <p class="subtle">BM25 may under-rank this passage unless analyzers, synonyms or expansion are added.</p>
+      </div>
+      <div class="mini">
+        <h3>ColBERT view</h3>
+        <p>Each query token can independently find its best semantic match:</p>
+        <ul>
+          <li><code>cancel → terminating</code></li>
+          <li><code>employment → work</code></li>
+          <li><code>agreement → contract</code></li>
+        </ul>
+        <p class="subtle">This is the key benefit of token-level late interaction.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. MaxSim, step by step</h2>
+    <p>For every query token, ColBERT finds the most similar token in the document, then sums those maxima.</p>
+
+    <div class="formula">
+      score(q,d) = Σᵢ maxⱼ ( qᵢ · dⱼ )
+    </div>
+
+    <table aria-label="ColBERT similarity matrix">
+      <thead>
+        <tr>
+          <th>Query token ↓ / Document token →</th>
+          <th>procedure</th>
+          <th>terminating</th>
+          <th>work</th>
+          <th>contract</th>
+          <th>Row max</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>cancel</th>
+          <td>0.18</td>
+          <td class="best">0.91</td>
+          <td>0.12</td>
+          <td>0.34</td>
+          <td class="sum">0.91</td>
+        </tr>
+        <tr>
+          <th>employment</th>
+          <td>0.08</td>
+          <td>0.24</td>
+          <td class="best">0.86</td>
+          <td>0.45</td>
+          <td class="sum">0.86</td>
+        </tr>
+        <tr>
+          <th>agreement</th>
+          <td>0.11</td>
+          <td>0.31</td>
+          <td>0.28</td>
+          <td class="best">0.94</td>
+          <td class="sum">0.94</td>
+        </tr>
+        <tr>
+          <th colspan="5">Final ColBERT score</th>
+          <td class="sum">2.71</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note" style="margin-top:16px">
+      “Late interaction” means the query and documents are encoded separately first, but their token vectors interact later during scoring.
+    </div>
+  </section>
+
+  <section>
+    <h2>4. Why one dense vector can lose detail</h2>
+    <div class="grid grid-2">
+      <div class="mini">
+        <h3>Single-vector dense retrieval</h3>
+        <p>A passage such as:</p>
+        <blockquote>
+          “The company may terminate an employee’s contract after a disciplinary review.”
+        </blockquote>
+        <p>is compressed into one vector. The overall topic may be captured, but distinct concepts can become entangled.</p>
+      </div>
+      <div class="mini">
+        <h3>ColBERT</h3>
+        <p>Separate contextual token vectors preserve local distinctions:</p>
+        <div class="tokens">
+          <span class="token doc">company</span>
+          <span class="token doc">terminate</span>
+          <span class="token doc">employee</span>
+          <span class="token doc">contract</span>
+          <span class="token doc">disciplinary review</span>
+        </div>
+        <p>Different query terms can match different parts of the passage.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>5. Interactive ranking example</h2>
+    <p>Select a query to see how different retrieval methods might rank three documents.</p>
+
+    <div class="controls">
+      <label for="querySelect"><strong>Query:</strong></label>
+      <select id="querySelect">
+        <option value="employment">How do I cancel my employment agreement?</option>
+        <option value="python">Python dictionary key lookup</option>
+        <option value="invoice">Invoice number INV-20491</option>
+      </select>
+      <button onclick="renderExample()">Compare rankings</button>
+    </div>
+
+    <div id="result" class="result"></div>
+  </section>
+
+  <section>
+    <h2>6. Where ColBERT fits in a search stack</h2>
+    <div class="flow">
+      <div class="box">User query</div>
+      <div class="arrow">→</div>
+      <div class="box">BM25 / dense candidate retrieval</div>
+      <div class="arrow">→</div>
+      <div class="box">ColBERT late interaction</div>
+      <div class="arrow">→</div>
+      <div class="box">Top results</div>
+    </div>
+    <p style="margin-top:18px">
+      ColBERT can be used as a first-stage retriever with a specialized index, or as a reranker over candidates returned by BM25 or dense search.
+    </p>
+  </section>
+
+  <section>
+    <h2>7. Practical trade-offs</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>BM25</th>
+          <th>Dense bi-encoder</th>
+          <th>ColBERT</th>
+          <th>Cross-encoder</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Exact matching</td><td>Excellent</td><td>Moderate</td><td>Good</td><td>Good</td></tr>
+        <tr><td>Semantic matching</td><td>Limited</td><td>Good</td><td>Very good</td><td>Excellent</td></tr>
+        <tr><td>Fine-grained token matching</td><td>Lexical only</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+        <tr><td>Index size</td><td>Small</td><td>Medium</td><td>Large</td><td>No reusable vector index</td></tr>
+        <tr><td>Query cost</td><td>Low</td><td>Low</td><td>Medium</td><td>High</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>8. The mental model</h2>
+    <div class="note">
+      Think of BM25 as matching words, a dense retriever as matching the overall meaning, and ColBERT as matching the meaning of each important query token against the best part of the document.
+    </div>
+  </section>
+</main>
+
+<footer>
+  Self-contained HTML explainer. No external libraries required.
+</footer>
+
+<script>
+const examples = {
+  employment: {
+    docs: [
+      ["D1", "Procedure for terminating a work contract"],
+      ["D2", "How to negotiate a commercial supplier agreement"],
+      ["D3", "Employee holiday and leave policy"]
+    ],
+    scores: {
+      "BM25": [0.28, 0.41, 0.22],
+      "Dense": [0.82, 0.54, 0.58],
+      "ColBERT": [0.94, 0.49, 0.46]
+    },
+    explanation: "ColBERT aligns cancel→terminating, employment→work, and agreement→contract."
+  },
+  python: {
+    docs: [
+      ["D1", "Accessing values in a Python dict by key"],
+      ["D2", "Sorting a list in Python"],
+      ["D3", "Database index lookup optimization"]
+    ],
+    scores: {
+      "BM25": [0.76, 0.31, 0.44],
+      "Dense": [0.88, 0.50, 0.61],
+      "ColBERT": [0.96, 0.42, 0.55]
+    },
+    explanation: "ColBERT can preserve separate matches for Python, dictionary and key lookup."
+  },
+  invoice: {
+    docs: [
+      ["D1", "Invoice INV-20491 — ACME Corp"],
+      ["D2", "Invoice processing workflow"],
+      ["D3", "ACME Corp annual contract"]
+    ],
+    scores: {
+      "BM25": [0.99, 0.48, 0.32],
+      "Dense": [0.78, 0.66, 0.59],
+      "ColBERT": [0.93, 0.57, 0.51]
+    },
+    explanation: "For exact identifiers, BM25 is often unbeatable. ColBERT is complementary, not universally superior."
+  }
+};
+
+function renderBars(method, docs, scores){
+  const ranked = docs.map((d,i)=>({doc:d,score:scores[i]})).sort((a,b)=>b.score-a.score);
+  let html = `<div class="mini"><h3>${method}</h3>`;
+  ranked.forEach(item=>{
+    html += `
+      <div class="bar-row">
+        <div><strong>${item.doc[0]}</strong>: ${item.doc[1]}</div>
+        <div class="bar"><span style="width:${item.score*100}%"></span></div>
+        <div>${item.score.toFixed(2)}</div>
+      </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+function renderExample(){
+  const key = document.getElementById("querySelect").value;
+  const ex = examples[key];
+  let html = `<div class="grid grid-3">`;
+  for(const method of ["BM25","Dense","ColBERT"]){
+    html += renderBars(method, ex.docs, ex.scores[method]);
+  }
+  html += `</div><p class="note" style="margin-top:16px">${ex.explanation}</p>`;
+  document.getElementById("result").innerHTML = html;
+}
+renderExample();
+</script>
+</body>
+</html>
