@@ -144,6 +144,20 @@
     background:#fff;
   }
   .arrow{color:var(--accent);font-size:1.4rem}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .toc a{
+    color:#fff;
+    text-decoration:none;
+    background:rgba(255,255,255,.14);
+    border:1px solid rgba(255,255,255,.25);
+    padding:6px 12px;
+    border-radius:999px;
+    font-size:.85rem;
+    font-weight:600;
+  }
+  .toc a:hover{background:rgba(255,255,255,.28)}
+  section{scroll-margin-top:16px}
+  tbody tr:hover th, tbody tr:hover td:not(.best):not(.sum){background:#f0f4fa}
   .refs{margin:0;padding-left:20px}
   .refs li{margin:12px 0}
   .refs a{color:var(--accent);font-weight:600}
@@ -157,14 +171,34 @@
     <h1>Understanding ColBERT</h1>
     <p class="lead">
       ColBERT is a neural retrieval model that keeps one embedding per token and combines them with
-      late interaction. This page shows why that matters, with concrete examples.
+      <strong>late interaction</strong>: queries and documents are encoded separately, and their token
+      vectors only meet at scoring time. This page shows why that matters, with concrete examples.
     </p>
+    <nav class="toc">
+      <a href="#basics">Basic idea</a>
+      <a href="#paraphrases">Paraphrases</a>
+      <a href="#maxsim">MaxSim</a>
+      <a href="#dense-detail">Dense vs ColBERT</a>
+      <a href="#demo">Interactive demo</a>
+      <a href="#stack">Search stack</a>
+      <a href="#tradeoffs">Trade-offs</a>
+      <a href="#mental-model">Mental model</a>
+      <a href="#references">References</a>
+    </nav>
   </div>
 </header>
 
 <main>
-  <section>
+  <section id="basics">
     <h2>1. The basic idea</h2>
+    <div class="note" style="margin-bottom:18px">
+      <strong>What "late interaction" means:</strong> the query and the documents are encoded
+      <em>separately</em> (like a dense retriever), but their token vectors are compared
+      token-by-token at scoring time — the interaction happens <em>late</em>. Contrast this with a
+      cross-encoder, which interacts <em>early</em> by jointly encoding the query and document
+      together (accurate but expensive), and a dense retriever, whose vectors never interact at the
+      token level at all.
+    </div>
     <div class="grid grid-3">
       <div class="mini">
         <span class="badge">BM25</span>
@@ -175,7 +209,7 @@
       <div class="mini">
         <span class="badge">Dense retriever</span>
         <h3>One vector per passage</h3>
-        <p>Compresses the whole query and passage into one vector each.</p>
+        <p>Compresses the whole query and passage into one vector each (also called a <em>bi-encoder</em>).</p>
         <p class="subtle">Good semantic matching, but fine details can get blurred.</p>
       </div>
       <div class="mini">
@@ -187,7 +221,7 @@
     </div>
   </section>
 
-  <section>
+  <section id="paraphrases">
     <h2>2. Example: paraphrases</h2>
     <p><strong>Query:</strong></p>
     <div class="tokens">
@@ -230,9 +264,14 @@
     </div>
   </section>
 
-  <section>
+  <section id="maxsim">
     <h2>3. MaxSim, step by step</h2>
     <p>For every query token, ColBERT finds the most similar token in the document, then sums those maxima.</p>
+    <p>
+      Here <code>qᵢ</code> and <code>dⱼ</code> are token embeddings, and the dot product
+      <code>qᵢ · dⱼ</code> measures their similarity — the vectors are normalized, so this is cosine
+      similarity: values near 1 mean "very similar in meaning", values near 0 mean "unrelated".
+    </p>
 
     <div class="formula">
       score(q,d) = Σᵢ maxⱼ ( qᵢ · dⱼ )
@@ -280,22 +319,40 @@
         </tr>
       </tbody>
     </table>
+    <p class="subtle" style="margin-top:10px">
+      The function words <code>for</code> and <code>a</code> are omitted from the matrix for clarity —
+      they match nothing strongly and barely affect the score.
+    </p>
+
+    <p>
+      Read one row at a time: for <strong>cancel</strong>, the best document token is
+      <strong>terminating</strong> (0.91), so <em>cancel</em> contributes 0.91 to the total — the other
+      similarities in that row are simply ignored. Each query token contributes only its single best
+      match, and the final score is the sum of those maxima: 0.91 + 0.86 + 0.94 = 2.71.
+    </p>
 
     <div class="note" style="margin-top:16px">
-      “Late interaction” means the query and documents are encoded separately first, but their token vectors interact later during scoring.
+      This is the "interaction" in late interaction: the query and document were encoded separately,
+      but their token vectors meet here, in this matrix, at scoring time.
     </div>
   </section>
 
-  <section>
+  <section id="dense-detail">
     <h2>4. Why one dense vector can lose detail</h2>
     <div class="grid grid-2">
       <div class="mini">
-        <h3>Single-vector dense retrieval</h3>
+        <h3>Dense retriever: one vector per passage</h3>
         <p>A passage such as:</p>
         <blockquote>
           “The company may terminate an employee’s contract after a disciplinary review.”
         </blockquote>
         <p>is compressed into one vector. The overall topic may be captured, but distinct concepts can become entangled.</p>
+        <p class="subtle">
+          Concretely: a query like <em>“how to appeal a disciplinary decision”</em> and this passage
+          both land near the same “HR / contract termination” region of vector space, so the single
+          vector can't tell whether <em>disciplinary review</em> is the point of the passage or just
+          mentioned in passing.
+        </p>
       </div>
       <div class="mini">
         <h3>ColBERT</h3>
@@ -312,9 +369,13 @@
     </div>
   </section>
 
-  <section>
+  <section id="demo">
     <h2>5. Interactive ranking example</h2>
     <p>Select a query to see how different retrieval methods might rank three documents.</p>
+    <p class="subtle">
+      Scores are illustrative, not from a real model. Compare <strong>rankings within each method</strong> —
+      the values are not comparable across methods (BM25 scores are not cosine similarities).
+    </p>
 
     <div class="controls">
       <label for="querySelect"><strong>Query:</strong></label>
@@ -329,7 +390,7 @@
     <div id="result" class="result"></div>
   </section>
 
-  <section>
+  <section id="stack">
     <h2>6. Where ColBERT fits in a search stack</h2>
     <div class="flow">
       <div class="box">User query</div>
@@ -345,14 +406,14 @@
     </p>
   </section>
 
-  <section>
+  <section id="tradeoffs">
     <h2>7. Practical trade-offs</h2>
     <table>
       <thead>
         <tr>
           <th>Property</th>
           <th>BM25</th>
-          <th>Dense bi-encoder</th>
+          <th>Dense retriever</th>
           <th>ColBERT</th>
           <th>Cross-encoder</th>
         </tr>
@@ -365,16 +426,33 @@
         <tr><td>Query cost</td><td>Low</td><td>Low</td><td>Medium</td><td>High</td></tr>
       </tbody>
     </table>
+    <p style="margin-top:16px">
+      <strong>Why ColBERT's index is large:</strong> it stores one vector per token instead of one per
+      passage — easily 10–100× more vectors. In practice this is mitigated with small per-token
+      dimensions and aggressive compression: ColBERTv2's residual compression and the PLAID engine
+      bring index size and query speed close to single-vector systems.
+    </p>
+    <p class="subtle">
+      "No reusable vector index" for cross-encoders means they cannot pre-compute anything per
+      document: the full model must re-run on every query–document pair at query time, which is why
+      they are only practical for reranking a small candidate set.
+    </p>
   </section>
 
-  <section>
+  <section id="mental-model">
     <h2>8. The mental model</h2>
     <div class="note">
       Think of BM25 as matching words, a dense retriever as matching the overall meaning, and ColBERT as matching the meaning of each important query token against the best part of the document.
     </div>
+    <p class="subtle" style="margin-top:14px">
+      <strong>What this page simplified:</strong> real ColBERT tokens are subword pieces rather than
+      whole words; queries are padded with special <code>[MASK]</code> tokens that also participate in
+      matching (a form of soft query expansion); and embeddings are normalized so dot products are
+      cosine similarities.
+    </p>
   </section>
 
-  <section>
+  <section id="references">
     <h2>9. References</h2>
     <ul class="refs">
       <li>
@@ -413,7 +491,7 @@ const examples = {
     ],
     scores: {
       "BM25": [0.28, 0.41, 0.22],
-      "Dense": [0.82, 0.54, 0.58],
+      "Dense retriever": [0.82, 0.54, 0.58],
       "ColBERT": [0.94, 0.49, 0.46]
     },
     explanation: "ColBERT aligns cancel→terminating, employment→work, and agreement→contract."
@@ -426,7 +504,7 @@ const examples = {
     ],
     scores: {
       "BM25": [0.76, 0.31, 0.44],
-      "Dense": [0.88, 0.50, 0.61],
+      "Dense retriever": [0.88, 0.50, 0.61],
       "ColBERT": [0.96, 0.42, 0.55]
     },
     explanation: "ColBERT can preserve separate matches for Python, dictionary and key lookup."
@@ -439,16 +517,22 @@ const examples = {
     ],
     scores: {
       "BM25": [0.99, 0.48, 0.32],
-      "Dense": [0.78, 0.66, 0.59],
+      "Dense retriever": [0.78, 0.66, 0.59],
       "ColBERT": [0.93, 0.57, 0.51]
     },
     explanation: "For exact identifiers, BM25 is often unbeatable. ColBERT is complementary, not universally superior."
   }
 };
 
+const methodNotes = {
+  "BM25": "ranks by exact term overlap",
+  "Dense retriever": "ranks by whole-passage meaning",
+  "ColBERT": "ranks by best per-token matches"
+};
+
 function renderBars(method, docs, scores){
   const ranked = docs.map((d,i)=>({doc:d,score:scores[i]})).sort((a,b)=>b.score-a.score);
-  let html = `<div class="mini"><h3>${method}</h3>`;
+  let html = `<div class="mini"><h3>${method}</h3><p class="subtle" style="margin-top:0">${methodNotes[method]}</p>`;
   ranked.forEach(item=>{
     html += `
       <div class="bar-row">
@@ -465,7 +549,7 @@ function renderExample(){
   const key = document.getElementById("querySelect").value;
   const ex = examples[key];
   let html = `<div class="grid grid-3">`;
-  for(const method of ["BM25","Dense","ColBERT"]){
+  for(const method of ["BM25","Dense retriever","ColBERT"]){
     html += renderBars(method, ex.docs, ex.scores[method]);
   }
   html += `</div><p class="note" style="margin-top:16px">${ex.explanation}</p>`;
